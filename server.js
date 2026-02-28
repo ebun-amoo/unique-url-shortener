@@ -7,14 +7,28 @@ app.use(express.json());
 
 const links = {};
 const originalUrl = "originalUrl";
-const alias = 'abc-123';
+// let id = 'abc-123';
 
 app.get('/', (req, res) => {
   res.send("Welcome to Ebun's Unique URL Shortener!")
 });
 
 app.post('/shorten', (req, res) => {
-  const {url} = req.body;
+  const { url } = req.body;
+  let { alias } = req.body;
+
+  if (!url) {
+    return res.status(400).json({error: "URL is required"});
+  }
+
+  if (!alias) {
+    alias = Math.random().toString(36).substring(2, 8);
+  }
+
+  if (links[alias]) {
+    return res.status(400).json({error: "Alias already exists. Please choose a different one."});
+  }
+  
   links[alias] = {
     originalUrl: url,
     shortUrl: `http://localhost:${PORT}/${alias}`
