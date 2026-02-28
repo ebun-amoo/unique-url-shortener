@@ -28,7 +28,7 @@ app.post('/shorten', (req, res) => {
   if (links[alias]) {
     return res.status(400).json({error: "Alias already exists. Please choose a different one."});
   }
-  
+
   links[alias] = {
     originalUrl: url,
     shortUrl: `http://localhost:${PORT}/${alias}`
@@ -39,6 +39,24 @@ app.post('/shorten', (req, res) => {
   });
   console.log(links);
 })
+
+app.get('/:alias', (req, res) => {
+  const { alias } = req.params;
+
+  if (!alias) {
+    return res.status(400).json({error: "Alias is required"});
+  }
+
+  const link = links[alias];
+
+  if (!link) {
+    return res.status(404).json({error: "Alias not found"});
+  }
+
+  if (link) {
+    res.redirect(link.originalUrl);
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
