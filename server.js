@@ -1,13 +1,51 @@
 import express from 'express';
+import fs from "fs";
+import rateLimit from "express-rate-limit";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
-const links = {};
+const limiter = rateLimit({
+   windowMs: 60 * 1000,
+   max: 10,
+   standardHeaders: true,
+   legacyHeaders: false
+});
+
+app.use(limiter);
+
+let links = {};
+
+try {
+   const data = fs.readFileSync("db.json", "utf-8");
+   links = JSON.parse(data);
+} catch (err) {
+   links = {};
+}
+
 // const TEN_DAYS = 10 * 24 * 60 * 60 * 1000;
 const TEN_DAYS = 30 * 60 * 1000;
+
+function isExpired(link) {
+  if (!link.deletedAt) return false;
+  return Date.now() - new Date(link.deletedAt).getTime() > TEN_DAYS;
+}
+
+let saveScheduled = false;
+
+function bufferedSave() {
+  if (saveScheduled) return;
+
+  saveScheduled = true;
+
+  setTimeout(() => {
+    fs.writeFile("db.json", JSON.stringify(links, null, 2), () => {
+      saveScheduled = false;
+    });
+  }, 1000);
+}
 
 app.get('/', (req, res) => {
   res.send("Welcome to Ebun's Unique URL Shortener!")
@@ -18,30 +56,50 @@ app.post('/shorten', (req, res) => {
   let { alias } = req.body;
 
   if (!url) {
-    return res.status(400).json({error: "URL is required"});
+    return res.status(400).json({ error: "URL is required" });
+  }
+
+  try {
+    new URL(url);
+  } catch {
+    return res.status(400).json({ error: "Invalid URL format" });
   }
 
   if (!alias) {
-    alias = Math.random().toString(36).substring(2, 8);
+    do {
+      alias = Math.random().toString(36).substring(2, 8);
+    } while (links[alias] && !isExpired(links[alias]));
   }
 
-  if (links[alias]) {
-    return res.status(400).json({error: "Alias already exists. Please choose a different one."});
+  if (links[alias] && !links[alias].deleted) {
+    return res.status(400).json({
+      error: "Alias already exists. Choose a different one."
+    });
   }
+
+  if (links[alias] && links[alias].deleted && !isExpired(links[alias])) {
+    return res.status(400).json({
+      error: "Alias has been deleted. Restore it or choose a different one."
+    });
+  }
+
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
 
   links[alias] = {
     originalUrl: url,
-    shortUrl: `http://localhost:${PORT}/${alias}`,
+    shortUrl: `${baseUrl}/${alias}`,
     createdAt: new Date().toISOString(),
     deleted: false,
     deletedAt: null
-  }
-  res.json({
-    alias: alias,
-    shortUrl: `http://localhost:${PORT}/${alias}`
+  };
+
+  bufferedSave();
+
+  return res.status(201).json({
+    alias,
+    shortUrl: `${baseUrl}/${alias}`
   });
-  console.log(links);
-})
+});
 
 app.get('/:alias', (req, res) => {
   const { alias } = req.params;
@@ -56,20 +114,22 @@ app.get('/:alias', (req, res) => {
     return res.status(404).json({error: "Alias not found"});
   }
 
-  const deletedTime = new Date(link.deletedAt).getTime();
-  const now = Date.now();
-  if (link.deleted === true && now - deletedTime > TEN_DAYS) {
-    delete links[alias];
-    return res.status(410).json({error: "Alias has been deleted"});
-  }
-  
-  if (link.deleted === true && now - deletedTime < TEN_DAYS) {
-    return res.status(410).json({error: "Alias has been deleted. Restore the within 10 days to use it again."});
+  if (link.deleted) {
+    if (isExpired(link)) {
+      delete links[alias];
+      bufferedSave();
+      return res.status(410).json({
+        error: "Alias has been permanently deleted."
+      });
+    }
+
+    return res.status(410).json({
+      error: "Alias has been deleted. Restore within 10 days to use again."
+    });
   }
 
   if (link) {
-    res.redirect(link.originalUrl);
-    res.status(302).end();
+    return res.redirect(302, link.originalUrl);
   }
 });
 
@@ -85,6 +145,7 @@ app.delete('/:alias', (req, res) => {
 
   links[alias].deleted = true;
   links[alias].deletedAt = new Date().toISOString();
+  bufferedSave();
 
   res.json({message: "Alias deleted successfully."});
 })
@@ -105,15 +166,15 @@ app.patch('/restore/:alias', (req, res) => {
     return res.json({message: "Alias is not deleted. No need to restore."});
   }
 
-  const deletedTime = new Date(link.deletedAt).getTime();
-  const now = Date.now();
-  if (link.deleted === true && now - deletedTime > TEN_DAYS) {
+  if (isExpired(link)) {
     delete links[alias];
+    bufferedSave();
     return res.status(410).json({error: "Alias has been permanently deleted and cannot be restored."});
   }
 
   links[alias].deleted = false;
   links[alias].deletedAt = null;
+  bufferedSave();
   res.json({message: "Alias has been successfully restored."})
 })
 
