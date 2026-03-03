@@ -48,7 +48,47 @@ function bufferedSave() {
 }
 
 app.get('/', (req, res) => {
-  res.send("Welcome to Ebun's Unique URL Shortener!")
+  res.send(`
+    <html>
+      <body style="font-family: Arial; padding: 40px;">
+        <h2>Ebun's Unique URL Shortener</h2>
+
+        <input type="text" id="urlInput" placeholder="Enter URL" />
+        <button onclick="shorten()">Shorten</button>
+
+        <p id="result"></p>
+        <button id="copyBtn" style="display:none;" onclick="copy()">Copy to Clipboard</button>
+
+        <script>
+          async function shorten() {
+            const url = document.getElementById("urlInput").value;
+
+            const response = await fetch('/shorten', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url })
+            });
+
+            const data = await response.json();
+
+            if (data.shortUrl) {
+              document.getElementById("result").innerText = data.shortUrl;
+              document.getElementById("copyBtn").style.display = "inline";
+            } else {
+              document.getElementById("result").innerText = data.error;
+              document.getElementById("copyBtn").style.display = "none";
+            }
+          }
+
+          function copy() {
+            const text = document.getElementById("result").innerText;
+            navigator.clipboard.writeText(text);
+            alert("Copied to clipboard!");
+          }
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 app.post('/shorten', (req, res) => {
