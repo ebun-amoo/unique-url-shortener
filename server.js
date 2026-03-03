@@ -3,7 +3,7 @@ import fs from "fs";
 import rateLimit from "express-rate-limit";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
@@ -54,6 +54,7 @@ app.get('/', (req, res) => {
         <h2>Ebun's Unique URL Shortener</h2>
 
         <input type="text" id="urlInput" placeholder="Enter URL" />
+        <input type="text" id="aliasInput" placeholder="Enter alias" />
         <button onclick="shorten()">Shorten</button>
 
         <p id="result"></p>
@@ -62,11 +63,12 @@ app.get('/', (req, res) => {
         <script>
           async function shorten() {
             const url = document.getElementById("urlInput").value;
+            const alias = document.getElementById("aliasInput").value;
 
             const response = await fetch('/shorten', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url })
+              body: JSON.stringify({ url, alias })
             });
 
             const data = await response.json();
